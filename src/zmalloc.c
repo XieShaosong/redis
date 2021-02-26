@@ -48,6 +48,8 @@ void zlibc_free(void *ptr) {
 #include "zmalloc.h"
 #include "atomicvar.h"
 
+//如果定义了宏HAVE_MALLOC_SIZE，那么 PREFIX_SIZE的长度为0。其他的情况下，都会多分配至少8字节的长度的内存空间
+//每次可能会多申请一个PREFIX_SIZE的空间
 #ifdef HAVE_MALLOC_SIZE
 #define PREFIX_SIZE (0)
 #define ASSERT_NO_SIZE_OVERFLOW(sz)
@@ -75,6 +77,7 @@ void zlibc_free(void *ptr) {
 #define dallocx(ptr,flags) je_dallocx(ptr,flags)
 #endif
 
+//atomicIncr(used_memory,__n);会调用__atomic_add_fetch(&var,(count),__ATOMIC_RELAXED);用于保证更新used_memory变量的操作是一个原子操作。
 #define update_zmalloc_stat_alloc(__n) atomicIncr(used_memory,(__n))
 #define update_zmalloc_stat_free(__n) atomicDecr(used_memory,(__n))
 
@@ -87,8 +90,10 @@ static void zmalloc_default_oom(size_t size) {
     abort();
 }
 
+// 打印异常
 static void (*zmalloc_oom_handler)(size_t) = zmalloc_default_oom;
 
+// 尝试分配内存， usable为返回的可用大小 malloc
 /* Try allocating memory, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
 void *ztrymalloc_usable(size_t size, size_t *usable) {
@@ -130,6 +135,7 @@ void *zmalloc_usable(size_t size, size_t *usable) {
     return ptr;
 }
 
+//分配和释放函数，绕过线程缓存，直接进入分配器容器。目前仅针对jemalloc实施。用于联机碎片整理。
 /* Allocation and free functions that bypass the thread cache
  * and go straight to the allocator arena bins.
  * Currently implemented only for jemalloc. Used for online defragmentation. */
@@ -149,6 +155,7 @@ void zfree_no_tcache(void *ptr) {
 }
 #endif
 
+// 尝试分配内存， usable为返回的可用大小 calloc
 /* Try allocating memory and zero it, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
 void *ztrycalloc_usable(size_t size, size_t *usable) {
@@ -190,10 +197,12 @@ void *zcalloc_usable(size_t size, size_t *usable) {
     return ptr;
 }
 
+// 根据新的size重新分配内存，并且对used_memory变量进行更新。只不过获取原内存大小方式不一样，根据HAVE_MALLOC_SIZE进行区分。
 /* Try reallocating memory, and return NULL if failed.
  * '*usable' is set to the usable size if non NULL. */
 void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
     ASSERT_NO_SIZE_OVERFLOW(size);
+// 如果没定义HAVE_MALLOC_SIZE, 就说明PREFIX_SIZE宏定义不为0，那么ptr并不是该段内存真正的开始地址
 #ifndef HAVE_MALLOC_SIZE
     void *realptr;
 #endif
@@ -210,6 +219,7 @@ void *ztryrealloc_usable(void *ptr, size_t size, size_t *usable) {
     if (ptr == NULL)
         return ztrymalloc_usable(size, usable);
 
+// 根据HAVE_MALLOC_SIZE宏定义，oldsize,newptr获取方式不一样，以及更新used_memory的细节
 #ifdef HAVE_MALLOC_SIZE
     oldsize = zmalloc_size(ptr);
     newptr = realloc(ptr,size);
@@ -261,6 +271,7 @@ void *zrealloc_usable(void *ptr, size_t size, size_t *usable) {
     return ptr;
 }
 
+// 对于malloc本身不提供此函数的系统，提供zmalloc_size()，因为在这种情况下，我们将包含此信息的头存储为每个分配的第一个字节。
 /* Provide zmalloc_size() for systems where this function is not provided by
  * malloc itself, given that in that case we store a header with this
  * information as the first bytes of every allocation. */
@@ -275,6 +286,7 @@ size_t zmalloc_usable_size(void *ptr) {
 }
 #endif
 
+// 释放空间:对oldsize和realptr对HAVE_MALLOC_SIZE有无声明分别进行操作。
 void zfree(void *ptr) {
 #ifndef HAVE_MALLOC_SIZE
     void *realptr;
@@ -293,6 +305,7 @@ void zfree(void *ptr) {
 #endif
 }
 
+// usable: 有多少空间被释放
 /* Similar to zfree, '*usable' is set to the usable size being freed. */
 void zfree_usable(void *ptr, size_t *usable) {
 #ifndef HAVE_MALLOC_SIZE
@@ -312,6 +325,7 @@ void zfree_usable(void *ptr, size_t *usable) {
 #endif
 }
 
+// 字符串复制 创建一个副本
 char *zstrdup(const char *s) {
     size_t l = strlen(s)+1;
     char *p = zmalloc(l);
@@ -320,12 +334,14 @@ char *zstrdup(const char *s) {
     return p;
 }
 
+// 获取used_memory变量的值
 size_t zmalloc_used_memory(void) {
     size_t um;
-    atomicGet(used_memory,um);
+    atomicGet(used_memory,um);// 保证原子操作
     return um;
 }
 
+// 用来设置内存分配失败处理函数指针zmalloc_oom_handler的值
 void zmalloc_set_oom_handler(void (*oom_handler)(size_t)) {
     zmalloc_oom_handler = oom_handler;
 }
@@ -345,6 +361,7 @@ void zmalloc_set_oom_handler(void (*oom_handler)(size_t)) {
 #include <sys/stat.h>
 #include <fcntl.h>
 
+// 返回rss大小
 size_t zmalloc_get_rss(void) {
     int page = sysconf(_SC_PAGESIZE);
     size_t rss;
@@ -469,6 +486,8 @@ size_t zmalloc_get_rss(void) {
 
 #if defined(USE_JEMALLOC)
 
+// jemalloc：http://jemalloc.net/jemalloc.3.html
+// 获取allocator分配器的信息
 int zmalloc_get_allocator_info(size_t *allocated,
                                size_t *active,
                                size_t *resident) {
@@ -491,6 +510,7 @@ int zmalloc_get_allocator_info(size_t *allocated,
     return 1;
 }
 
+// jemalloc异步执行清楚, flushdb之后并且没有流量的时候需要
 void set_jemalloc_bg_thread(int enable) {
     /* let jemalloc do purging asynchronously, required when there's no traffic 
      * after flushdb */
@@ -498,6 +518,7 @@ void set_jemalloc_bg_thread(int enable) {
     je_mallctl("background_thread", NULL, 0, &val, 1);
 }
 
+// jemalloc 将所有未使用的（保留的）页面返回到操作系统
 int jemalloc_purge() {
     /* return all unused (reserved) pages to the OS */
     char tmp[32];
@@ -549,6 +570,7 @@ int jemalloc_purge() {
  * Example: zmalloc_get_smap_bytes_by_field("Rss:",-1);
  */
 #if defined(HAVE_PROC_SMAPS)
+// 获取/proc/pid/smaps 中某一个field的字节大小
 size_t zmalloc_get_smap_bytes_by_field(char *field, long pid) {
     char line[1024];
     size_t bytes = 0;
@@ -608,10 +630,12 @@ size_t zmalloc_get_smap_bytes_by_field(char *field, long pid) {
 }
 #endif
 
+//获取Rss中已改写的私有页面页面大小
 size_t zmalloc_get_private_dirty(long pid) {
     return zmalloc_get_smap_bytes_by_field("Private_Dirty:",pid);
 }
 
+// 获取物理内存的字节数
 /* Returns the size of physical memory (RAM) in bytes.
  * It looks ugly, but this is the cleanest way to achieve cross platform results.
  * Cleaned up from:

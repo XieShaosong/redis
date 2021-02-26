@@ -33,6 +33,7 @@
 #ifndef __SDS_H
 #define __SDS_H
 
+// 最大预分配长度
 #define SDS_MAX_PREALLOC (1024*1024)
 extern const char *SDS_NOINIT;
 
@@ -40,8 +41,13 @@ extern const char *SDS_NOINIT;
 #include <stdarg.h>
 #include <stdint.h>
 
+// 用于指向sdshdr buf属性
 typedef char *sds;
 
+// len: buf 长度 
+// alloc: 已分配空间(不包含头和终止符)
+// flag：flags低三位用于表示sds type。即（flags & SDS_TYPE_MASK）值就对应SDS_TYPE_xxx宏，比如flags = 0就代表SDS_TYPE_5， flags = 2就代表SDS_TYPE_16。
+// __attribute__ ((__packed__)) 选项是告诉编译器，以1字节对齐。 
 /* Note: sdshdr5 is never used, we just access the flags byte directly.
  * However is here to document the layout of type 5 SDS strings. */
 struct __attribute__ ((__packed__)) sdshdr5 {
@@ -84,6 +90,7 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
+// 获取len
 static inline size_t sdslen(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -101,6 +108,8 @@ static inline size_t sdslen(const sds s) {
     return 0;
 }
 
+
+// 获取空闲的内存空间: alloc-len
 static inline size_t sdsavail(const sds s) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -127,6 +136,8 @@ static inline size_t sdsavail(const sds s) {
     return 0;
 }
 
+
+// 设置len
 static inline void sdssetlen(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -151,6 +162,7 @@ static inline void sdssetlen(sds s, size_t newlen) {
     }
 }
 
+// 增加len increase len
 static inline void sdsinclen(sds s, size_t inc) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {
@@ -176,6 +188,7 @@ static inline void sdsinclen(sds s, size_t inc) {
     }
 }
 
+// 获取alloc
 /* sdsalloc() = sdsavail() + sdslen() */
 static inline size_t sdsalloc(const sds s) {
     unsigned char flags = s[-1];
@@ -194,6 +207,7 @@ static inline size_t sdsalloc(const sds s) {
     return 0;
 }
 
+// 设置alloc
 static inline void sdssetalloc(sds s, size_t newlen) {
     unsigned char flags = s[-1];
     switch(flags&SDS_TYPE_MASK) {

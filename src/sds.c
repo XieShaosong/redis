@@ -41,6 +41,7 @@
 
 const char *SDS_NOINIT = "SDS_NOINIT";
 
+// 获取header的长度
 static inline int sdsHdrSize(char type) {
     switch(type&SDS_TYPE_MASK) {
         case SDS_TYPE_5:
@@ -57,6 +58,7 @@ static inline int sdsHdrSize(char type) {
     return 0;
 }
 
+// 获取sds类型
 static inline char sdsReqType(size_t string_size) {
     if (string_size < 1<<5)
         return SDS_TYPE_5;
@@ -73,6 +75,7 @@ static inline char sdsReqType(size_t string_size) {
 #endif
 }
 
+// 获取sds类型范围的最大值
 static inline size_t sdsTypeMaxSize(char type) {
     if (type == SDS_TYPE_5)
         return (1<<5) - 1;
@@ -87,6 +90,7 @@ static inline size_t sdsTypeMaxSize(char type) {
     return -1; /* this is equivalent to the max SDS_TYPE_64 or SDS_TYPE_32 */
 }
 
+//根据init指针和initLen 创建新的sds字符串
 /* Create a new sds string with the content specified by the 'init' pointer
  * and 'initlen'.
  * If NULL is used for 'init' the string is initialized with zero bytes.
@@ -173,29 +177,34 @@ sds sdstrynewlen(const void *init, size_t initlen) {
     return _sdsnewlen(init, initlen, 1);
 }
 
+// 创建一个空sds
 /* Create an empty (zero length) sds string. Even in this case the string
  * always has an implicit null term. */
 sds sdsempty(void) {
     return sdsnewlen("",0);
 }
 
+// 创建一个sds buf值为init
 /* Create a new sds string starting from a null terminated C string. */
 sds sdsnew(const char *init) {
     size_t initlen = (init == NULL) ? 0 : strlen(init);
     return sdsnewlen(init, initlen);
 }
 
+// 复制sds
 /* Duplicate an sds string. */
 sds sdsdup(const sds s) {
     return sdsnewlen(s, sdslen(s));
 }
 
+// 释放sds
 /* Free an sds string. No operation is performed if 's' is NULL. */
 void sdsfree(sds s) {
     if (s == NULL) return;
     s_free((char*)s-sdsHdrSize(s[-1]));
 }
 
+// 更新sds len的值
 /* Set the sds string length to the length as obtained with strlen(), so
  * considering as content only up to the first null term character.
  *
@@ -215,6 +224,7 @@ void sdsupdatelen(sds s) {
     sdssetlen(s, reallen);
 }
 
+// 设置为空字符串，但是不会free空间
 /* Modify an sds string in-place to make it empty (zero length).
  * However all the existing buffer is not discarded but set as free space
  * so that next append operations will not require allocations up to the
@@ -224,6 +234,8 @@ void sdsclear(sds s) {
     s[0] = '\0';
 }
 
+// 增加sds字符串末尾的可用空间 不会更改sdslen() 返回的长度，只会更改可用的缓冲区空间。
+// 如果sds返回指针发送变化，所以原sds的指针引用都将失效，需更新到新的sds
 /* Enlarge the free space at the end of the sds string so that the caller
  * is sure that after calling this function can overwrite up to addlen
  * bytes after the end of the string, plus one more byte for nul term.
@@ -281,6 +293,7 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     return s;
 }
 
+//remove空闲的内存，如果s重新分配了内存，那么 sds所有引用到的地方都需要修改，因为以前的指针已经失效。
 /* Reallocate the sds string so that it has no free space at the end. The
  * contained string remains not altered, but next concatenation operations
  * will require a reallocation.
@@ -324,6 +337,7 @@ sds sdsRemoveFreeSpace(sds s) {
     return s;
 }
 
+// 返回sds真实分配的内存大小
 /* Return the total size of the allocation of the specified sds string,
  * including:
  * 1) The sds header before the pointer.
@@ -336,12 +350,14 @@ size_t sdsAllocSize(sds s) {
     return sdsHdrSize(s[-1])+alloc+1;
 }
 
+// 获取sds对应的sdshdr头指针
 /* Return the pointer of the actual SDS allocation (normally SDS strings
  * are referenced by the start of the string buffer). */
 void *sdsAllocPtr(sds s) {
     return (void*) (s-sdsHdrSize(s[-1]));
 }
 
+// 增加长度
 /* Increment the sds length and decrements the left free space at the
  * end of the string according to 'incr'. Also set the null term
  * in the new end of the string.
@@ -406,6 +422,7 @@ void sdsIncrLen(sds s, ssize_t incr) {
     s[len] = '\0';
 }
 
+// 将sds增长到指定长度。不属于sds原始长度的字节将被设置为0
 /* Grow the sds to have the specified length. Bytes that were not part of
  * the original length of the sds will be set to zero.
  *
@@ -424,6 +441,7 @@ sds sdsgrowzero(sds s, size_t len) {
     return s;
 }
 
+// 将len字节的二进制安全t字符串添加到sds字符串的结尾
 /* Append the specified binary-safe string pointed by 't' of 'len' bytes to the
  * end of the specified sds string 's'.
  *
@@ -440,6 +458,7 @@ sds sdscatlen(sds s, const void *t, size_t len) {
     return s;
 }
 
+//将t字符串添加到sds字符串结尾
 /* Append the specified null terminated C string to the sds string 's'.
  *
  * After the call, the passed sds string is no longer valid and all the
@@ -448,6 +467,7 @@ sds sdscat(sds s, const char *t) {
     return sdscatlen(s, t, strlen(t));
 }
 
+//将 sds字符串t 添加到sds字符串s结尾
 /* Append the specified sds 't' to the existing sds 's'.
  *
  * After the call, the modified sds string is no longer valid and all the
@@ -456,6 +476,7 @@ sds sdscatsds(sds s, const sds t) {
     return sdscatlen(s, t, sdslen(t));
 }
 
+// 修改sds字符串“s”以保存由长度为“len”字节的“t”指向的指定二进制安全字符串。
 /* Destructively modify the sds string 's' to hold the specified binary
  * safe string pointed by 't' of length 'len' bytes. */
 sds sdscpylen(sds s, const char *t, size_t len) {
@@ -475,6 +496,7 @@ sds sdscpy(sds s, const char *t) {
     return sdscpylen(s, t, strlen(t));
 }
 
+// sdscatlonglong() 工具， 将实际的数字转换成字符串 s
 /* Helper for sdscatlonglong() doing the actual number -> string
  * conversion. 's' must point to a string with room for at least
  * SDS_LLSTR_SIZE bytes.
@@ -513,6 +535,7 @@ int sdsll2str(char *s, long long value) {
     return l;
 }
 
+// 和sdsll2str()一样，用于unsigned long long
 /* Identical sdsll2str(), but for unsigned long long type. */
 int sdsull2str(char *s, unsigned long long v) {
     char *p, aux;
@@ -542,6 +565,7 @@ int sdsull2str(char *s, unsigned long long v) {
     return l;
 }
 
+// 创建一个sds字符串值为long long
 /* Create an sds string from a long long value. It is much faster than:
  *
  * sdscatprintf(sdsempty(),"%lld\n", value);
@@ -595,6 +619,7 @@ sds sdscatvprintf(sds s, const char *fmt, va_list ap) {
     return t;
 }
 
+//将使用printf-like格式说明符获得的字符串附加到sds字符串's'上。
 /* Append to the sds string 's' a string obtained using printf-alike format
  * specifier.
  *
@@ -620,6 +645,7 @@ sds sdscatprintf(sds s, const char *fmt, ...) {
     return t;
 }
 
+// 此函数类似于sdscatprintf，但速度更快
 /* This function is similar to sdscatprintf, but much faster as it does
  * not rely on sprintf() family functions implemented by the libc that
  * are often very slow. Moreover directly handling the sds string as
@@ -730,6 +756,7 @@ sds sdscatfmt(sds s, char const *fmt, ...) {
     return s;
 }
 
+// 从左到右删除字符串中仅由“cset”中的连续字符组成的部分， 
 /* Remove the part of the string from left and from right composed just of
  * contiguous characters found in 'cset', that is a null terminted C string.
  *
@@ -759,6 +786,7 @@ sds sdstrim(sds s, const char *cset) {
     return s;
 }
 
+//截取sds start到end索引
 /* Turn the string into a smaller (or equal) string containing only the
  * substring specified by the 'start' and 'end' indexes.
  *
@@ -801,6 +829,7 @@ void sdsrange(sds s, ssize_t start, ssize_t end) {
     sdssetlen(s,newlen);
 }
 
+// 将sds字母字符转换成小写。
 /* Apply tolower() to every character of the sds string 's'. */
 void sdstolower(sds s) {
     size_t len = sdslen(s), j;
@@ -808,6 +837,7 @@ void sdstolower(sds s) {
     for (j = 0; j < len; j++) s[j] = tolower(s[j]);
 }
 
+// 将sds字母字符转换成大写
 /* Apply toupper() to every character of the sds string 's'. */
 void sdstoupper(sds s) {
     size_t len = sdslen(s), j;
@@ -815,6 +845,7 @@ void sdstoupper(sds s) {
     for (j = 0; j < len; j++) s[j] = toupper(s[j]);
 }
 
+// sds字符串比较
 /* Compare two sds strings s1 and s2 with memcmp().
  *
  * Return value:
@@ -838,6 +869,7 @@ int sdscmp(const sds s1, const sds s2) {
     return cmp;
 }
 
+// 通过分隔符 sep 拆分sds字符串s
 /* Split 's' with separator in 'sep'. An array
  * of sds strings is returned. *count will be set
  * by reference to the number of tokens returned.
@@ -904,6 +936,7 @@ cleanup:
     }
 }
 
+// 释放sds字符串数组
 /* Free the result returned by sdssplitlen(), or do nothing if 'tokens' is NULL. */
 void sdsfreesplitres(sds *tokens, int count) {
     if (!tokens) return;
@@ -912,6 +945,7 @@ void sdsfreesplitres(sds *tokens, int count) {
     s_free(tokens);
 }
 
+//将sds字符串附加一个转义字符串表示。
 /* Append to the sds string "s" an escaped string representation where
  * all the non-printable characters (tested with isprint()) are turned into
  * escapes in the form "\n\r\a...." or "\x<hex-number>".
@@ -943,6 +977,7 @@ sds sdscatrepr(sds s, const char *p, size_t len) {
     return sdscatlen(s,"\"",1);
 }
 
+//判断是否是16进制
 /* Helper function for sdssplitargs() that returns non zero if 'c'
  * is a valid hex digit. */
 int is_hex_digit(char c) {
@@ -950,6 +985,7 @@ int is_hex_digit(char c) {
            (c >= 'A' && c <= 'F');
 }
 
+// 16进制数字转换为0到15之间的整数
 /* Helper function for sdssplitargs() that converts a hex digit into an
  * integer from 0 to 15 */
 int hex_digit_to_int(char c) {
@@ -974,6 +1010,7 @@ int hex_digit_to_int(char c) {
     }
 }
 
+// 将字符串根据参数argc拆分成一个sds字符串数组
 /* Split a line into arguments, where every argument can be in the
  * following programming-language REPL-alike form:
  *
@@ -1103,6 +1140,7 @@ err:
     return NULL;
 }
 
+//修改字符串，将“from”字符串中指定的字符集的所有匹配项替换为“to”数组中的相应字符。
 /* Modify the string substituting all the occurrences of the set of
  * characters specified in the 'from' string to the corresponding character
  * in the 'to' array.
@@ -1126,6 +1164,7 @@ sds sdsmapchars(sds s, const char *from, const char *to, size_t setlen) {
     return s;
 }
 
+//使用指定的分隔符（也是一个C字符串）连接一个C字符串数组。
 /* Join an array of C strings using the specified separator (also a C string).
  * Returns the result as an sds string. */
 sds sdsjoin(char **argv, int argc, char *sep) {
@@ -1139,6 +1178,7 @@ sds sdsjoin(char **argv, int argc, char *sep) {
     return join;
 }
 
+//使用指定的分隔符（也是一个C字符串）连接一个sds字符串数组。
 /* Like sdsjoin, but joins an array of SDS strings. */
 sds sdsjoinsds(sds *argv, int argc, const char *sep, size_t seplen) {
     sds join = sdsempty();
@@ -1160,6 +1200,7 @@ void *sds_malloc(size_t size) { return s_malloc(size); }
 void *sds_realloc(void *ptr, size_t size) { return s_realloc(ptr,size); }
 void sds_free(void *ptr) { s_free(ptr); }
 
+//字符串模块拓展
 /* Perform expansion of a template string and return the result as a newly
  * allocated sds.
  *
